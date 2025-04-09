@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: vocaltranslator
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./voice_models:/app/voice_models
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    # If GPU is available, uncomment the following lines
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu] 
