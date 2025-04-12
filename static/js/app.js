@@ -92,41 +92,32 @@ function initializeUIElements() {
  * Initialize WebSocket connection
  */
 function initializeWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    socket = new WebSocket(wsUrl);
-    
-    socket.onopen = () => {
-        console.log('WebSocket connection established');
+    socket = io('http://localhost:5001');
+
+    socket.on('connect', () => {
+        console.log('WebSocket (Socket.IO) connected');
         isConnected = true;
         updateUIState('ready');
-    };
-    
-    socket.onclose = () => {
-        console.log('WebSocket connection closed');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('WebSocket disconnected');
         isConnected = false;
         updateUIState('idle');
-        
-        // Try to reconnect after 5 seconds
         setTimeout(initializeWebSocket, 5000);
-    };
-    
-    socket.onerror = (error) => {
+    });
+
+    socket.on('transcription', (data) => {
+        handleSocketMessage(data);
+    });
+
+    socket.on('error', (error) => {
         console.error('WebSocket error:', error);
-        showError('Connection error. Please check your internet connection and try again.');
-    };
-    
-    // Handle incoming messages from server
-    socket.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleSocketMessage(data);
-        } catch (e) {
-            console.error('Error parsing WebSocket message:', e);
-        }
-    };
+        showError('Connection error. Please try again.');
+    });
 }
+
+
 
 /**
  * Handle incoming socket messages
@@ -202,7 +193,7 @@ function toggleRecording() {
 function toggleVoiceTraining() {
     const trainButton = document.getElementById('trainVoiceButton');
     const modelNameInput = document.getElementById('voiceModelName');
-    
+    console.log("===> toggle", isTrainingMode)
     if (isTrainingMode) {
         // Stop training recording
         recorder.stop();
@@ -238,6 +229,8 @@ function toggleVoiceTraining() {
  * @param {Blob} audioBlob - The recorded audio as a blob
  */
 function handleRecordingComplete(audioBlob) {
+    console.log("===>", isTrainingMode)
+    console.log("====? here", audioBlob)
     if (isTrainingMode) {
         // Handle voice model training
         submitVoiceTraining(audioBlob);

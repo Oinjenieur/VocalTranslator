@@ -300,4 +300,4 @@ if __name__ == '__main__':
     # Create folders if they don't exist
     os.makedirs('static/audio', exist_ok=True)
     os.makedirs(VOICE_MODELS_PATH, exist_ok=True)
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True) 
+    socketio.run(app, host='0.0.0.0', port=5001, debug=True) 
