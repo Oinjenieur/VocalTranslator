@@ -29,3 +29,4 @@ flask_socketio
 SpeechRecognition
 googletrans
 gtts
+langdetect

@@ -17,6 +17,7 @@ import time
 from TTS.api import TTS
 import shutil
 from pathlib import Path
+import subprocess
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -47,11 +48,19 @@ os.makedirs(VOICE_MODELS_PATH, exist_ok=True)
 
 # Initialize TTS system
 try:
-    tts_system = TTS("tts_models/en/ljspeech/tacotron2-DDC")
+    tts_system = TTS("tts_models/multilingual/multi-dataset/your_tts")
     logging.info("TTS system initialized successfully")
 except Exception as e:
     logging.error(f"Error initializing TTS system: {e}")
     tts_system = None
+
+def convert_to_wav(input_path, output_path):
+    """Convert audio file to 16kHz mono PCM WAV using ffmpeg"""
+    command = [
+        'ffmpeg', '-y', '-i', input_path,
+        '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', output_path
+    ]
+    subprocess.run(command, check=True)
 
 # Store user voice models
 user_voice_models = {}
@@ -60,13 +69,25 @@ user_voice_models = {}
 def index():
     return render_template('index.html', languages=LANGUAGES)
 
+# @app.route('/voices')
+# def list_voices():
+#     """List available trained voice models"""
+#     voices = []
+#     if os.path.exists(VOICE_MODELS_PATH):
+#         voices = [f for f in os.listdir(VOICE_MODELS_PATH) if os.path.isdir(os.path.join(VOICE_MODELS_PATH, f))]
+#     return jsonify({"voices": voices})
+
 @app.route('/voices')
 def list_voices():
-    """List available trained voice models"""
     voices = []
+
     if os.path.exists(VOICE_MODELS_PATH):
         voices = [f for f in os.listdir(VOICE_MODELS_PATH) if os.path.isdir(os.path.join(VOICE_MODELS_PATH, f))]
+    default_voices = ['default_tacotron2']
+    voices = default_voices + voices
+
     return jsonify({"voices": voices})
+
 
 @socketio.on('start_recording')
 def handle_start_recording(data):
@@ -134,16 +155,22 @@ def translate_audio():
     source_lang = request.form.get('source_lang', 'auto')
     target_lang = request.form.get('target_lang', 'en')
     voice_model = request.form.get('voice_model', None)
-    
-    # Save the audio file temporarily
-    temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-    audio_file.save(temp_audio.name)
-    temp_audio.close()
-    
+
+    temp_dir = tempfile.mkdtemp()
+    temp_input_path = os.path.join(temp_dir, f"{uuid.uuid4()}.webm")
+    temp_wav_path = os.path.join(temp_dir, f"{uuid.uuid4()}.wav")
+
     try:
-        with sr.AudioFile(temp_audio.name) as source:
+        # Save audio
+        audio_file.save(temp_input_path)
+
+        # Convert to proper WAV
+        convert_to_wav(temp_input_path, temp_wav_path)
+
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(temp_wav_path) as source:
             audio_data = recognizer.record(source)
-            
+
             # Speech recognition
             if source_lang == 'auto':
                 text = recognizer.recognize_google(audio_data)
@@ -151,39 +178,45 @@ def translate_audio():
                 source_lang = detected_lang
             else:
                 text = recognizer.recognize_google(audio_data, language=source_lang)
-            
+
             # Translation
             if source_lang != target_lang:
+                from googletrans import Translator
+                translator = Translator()
                 translation = translator.translate(text, src=source_lang, dest=target_lang)
                 translated_text = translation.text
             else:
                 translated_text = text
-            
-            # Generate translated audio output
+
+            # Prepare output path
             output_filename = f"static/audio/output_{uuid.uuid4()}.wav"
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            
-            if voice_model and voice_model in user_voice_models and tts_system:
-                # Use voice cloning model if available
-                voice_model_path = os.path.join(VOICE_MODELS_PATH, voice_model)
-                try:
-                    # Use the TTS system with the cloned voice
+
+            # === Clone voice nếu model tồn tại ===
+            reference_wav_path = None
+            if voice_model:
+                model_path = os.path.join(VOICE_MODELS_PATH, voice_model)
+                reference_wav = os.path.join(model_path, "reference.wav")
+                if os.path.isfile(reference_wav):
+                    reference_wav_path = reference_wav
+
+            # === Synthesizing audio ===
+            try:
+                if reference_wav_path and tts_system:
                     tts_system.tts_to_file(
                         text=translated_text,
                         file_path=output_filename,
-                        speaker_wav=os.path.join(voice_model_path, "reference.wav"),
+                        speaker_wav=reference_wav_path,
                         language=target_lang
                     )
-                except Exception as voice_error:
-                    logging.error(f"Voice cloning error: {voice_error}")
-                    # Fallback to standard TTS
+                else:
                     tts = gTTS(text=translated_text, lang=target_lang)
                     tts.save(output_filename)
-            else:
-                # Use standard TTS
+            except Exception as voice_error:
+                logging.error(f"Voice cloning error: {voice_error}")
                 tts = gTTS(text=translated_text, lang=target_lang)
                 tts.save(output_filename)
-            
+
             return jsonify({
                 'original_text': text,
                 'translated_text': translated_text,
@@ -191,7 +224,7 @@ def translate_audio():
                 'target_lang': target_lang,
                 'audio_url': '/' + output_filename
             })
-    
+
     except sr.UnknownValueError:
         return jsonify({'error': 'Could not understand audio'}), 400
     except sr.RequestError as e:
@@ -200,9 +233,16 @@ def translate_audio():
         logging.error(f"Error: {str(e)}")
         return jsonify({'error': f'Error processing: {str(e)}'}), 500
     finally:
-        # Clean up
-        if os.path.exists(temp_audio.name):
-            os.unlink(temp_audio.name)
+        try:
+            if os.path.exists(temp_input_path):
+                os.unlink(temp_input_path)
+            if os.path.exists(temp_wav_path):
+                os.unlink(temp_wav_path)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except Exception as cleanup_error:
+            logging.error(f"Cleanup error: {cleanup_error}")
+
 
 @app.route('/train_voice_model', methods=['POST'])
 def train_voice_model():

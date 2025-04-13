@@ -48,9 +48,11 @@ async function initializeApp() {
         
         // Initialize WebSocket connection
         initializeWebSocket();
-        
+       
         // Load voice models
         loadVoiceModels();
+
+        console.log("Success")
         
     } catch (error) {
         showError(`Initialization error: ${error.message}`);
@@ -92,7 +94,12 @@ function initializeUIElements() {
  * Initialize WebSocket connection
  */
 function initializeWebSocket() {
-    socket = io('http://localhost:5001');
+    // socket = io('http://178.128.122.234:5001');
+    // socket = io('https://80ewms-ip-178-128-122-234.tunnelmole.net')
+    socket = io('https://80ewms-ip-178-128-122-234.tunnelmole.net', {
+        transports: ['polling']
+      });
+      
 
     socket.on('connect', () => {
         console.log('WebSocket (Socket.IO) connected');
@@ -147,98 +154,145 @@ function handleSocketMessage(data) {
  */
 function toggleRecording() {
     const recordButton = document.getElementById('recordButton');
-    
-    if (recorder.isRecording) {
-        // Stop recording
-        recorder.stop();
-        recordButton.innerHTML = '<i class="fas fa-microphone"></i> Start Recording';
-        recordButton.classList.remove('btn-danger');
-        recordButton.classList.add('btn-primary');
-        document.getElementById('visualizer').classList.remove('recording');
-        updateUIState('translating');
-    } else {
-        // Start recording
-        recordButton.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
-        recordButton.classList.remove('btn-primary');
-        recordButton.classList.add('btn-danger');
-        document.getElementById('visualizer').classList.add('recording');
-        
-        // Get language settings
-        const sourceLanguage = document.getElementById('sourceLanguage').value;
-        const targetLanguage = document.getElementById('targetLanguage').value;
-        
-        // Prepare for recording
-        if (isConnected) {
-            // Notify server about recording start
-            const startMsg = {
-                action: 'start_recording',
-                source_lang: sourceLanguage,
-                target_lang: targetLanguage,
-                voice_model: currentVoiceModel
-            };
-            
-            socket.send(JSON.stringify(startMsg));
-            
-            // Start recording
-            recorder.start();
+    try {
+        if (recorder.isRecording) {
+            // Stop recording
+            recorder.stop();
+            recordButton.innerHTML = '<i class="fas fa-microphone"></i> Start Recording';
+            recordButton.classList.remove('btn-danger');
+            recordButton.classList.add('btn-primary');
+            document.getElementById('visualizer').classList.remove('recording');
+            updateUIState('translating');
         } else {
-            showError('Not connected to server. Please wait or refresh the page.');
+            // Start recording
+            recordButton.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
+            recordButton.classList.remove('btn-primary');
+            recordButton.classList.add('btn-danger');
+            document.getElementById('visualizer').classList.add('recording');
+            
+            // Get language settings
+            const sourceLanguage = document.getElementById('sourceLanguage').value;
+            const targetLanguage = document.getElementById('targetLanguage').value;
+            
+            // Prepare for recording
+            if (isConnected) {
+                // Notify server about recording start
+                const startMsg = {
+                    action: 'start_recording',
+                    source_lang: sourceLanguage,
+                    target_lang: targetLanguage,
+                    voice_model: currentVoiceModel
+                };
+                
+                socket.send(JSON.stringify(startMsg));
+
+                
+                // Start recording
+                recorder.start();
+            } else {
+                showError('Not connected to server. Please wait or refresh the page.');
+            }
         }
+    } catch(err) {
+        console.log("===<", err)
     }
+   
 }
 
 /**
  * Toggle voice training mode
  */
+// function toggleVoiceTraining() {
+//     const trainButton = document.getElementById('trainVoiceButton');
+//     const modelNameInput = document.getElementById('voiceModelName');
+//     console.log("===> toggle", isTrainingMode)
+//     if (isTrainingMode) {
+//         // Stop training recording
+//         recorder.stop();
+//         trainButton.innerHTML = 'Train Voice Model';
+//         trainButton.classList.remove('btn-danger');
+//         trainButton.classList.add('btn-primary');
+//         document.getElementById('trainingVisualizer').classList.remove('recording');
+//         isTrainingMode = false;
+        
+//         // Model name validation
+//         const modelName = modelNameInput.value.trim();
+//         if (!modelName) {
+//             showError('Please enter a name for your voice model.');
+//             return;
+//         }
+        
+//         updateUIState('processing');
+//     } else {
+//         // Start training mode
+//         trainButton.innerHTML = 'Stop Recording';
+//         trainButton.classList.remove('btn-primary');
+//         trainButton.classList.add('btn-danger');
+//         document.getElementById('trainingVisualizer').classList.add('recording');
+//         isTrainingMode = true;
+        
+//         // Start recording for training
+//         recorder.start();
+//     }
+// }
+
 function toggleVoiceTraining() {
     const trainButton = document.getElementById('trainVoiceButton');
     const modelNameInput = document.getElementById('voiceModelName');
+    
     console.log("===> toggle", isTrainingMode)
+    const modelName = modelNameInput.value.trim();
+    if (!modelName) {
+        showError('Please enter a name for your voice model.');
+        updateUIState('ready');
+        return;
+    }
+
     if (isTrainingMode) {
-        // Stop training recording
         recorder.stop();
+        
         trainButton.innerHTML = 'Train Voice Model';
         trainButton.classList.remove('btn-danger');
         trainButton.classList.add('btn-primary');
         document.getElementById('trainingVisualizer').classList.remove('recording');
-        isTrainingMode = false;
-        
-        // Model name validation
-        const modelName = modelNameInput.value.trim();
-        if (!modelName) {
-            showError('Please enter a name for your voice model.');
-            return;
-        }
-        
-        updateUIState('processing');
+
     } else {
-        // Start training mode
         trainButton.innerHTML = 'Stop Recording';
         trainButton.classList.remove('btn-primary');
         trainButton.classList.add('btn-danger');
         document.getElementById('trainingVisualizer').classList.add('recording');
         isTrainingMode = true;
         
-        // Start recording for training
         recorder.start();
     }
 }
+
 
 /**
  * Handle completed recording
  * @param {Blob} audioBlob - The recorded audio as a blob
  */
+// function handleRecordingComplete(audioBlob) {
+//     console.log("===> tranningmode", isTrainingMode)
+//     console.log("====? here audiodata", audioBlob)
+//     if (isTrainingMode) {
+//         // Handle voice model training
+//         submitVoiceTraining(audioBlob);
+//     } else {
+//         // Handle translation
+//         submitAudioForTranslation(audioBlob);
+//     }
+// }
+
 function handleRecordingComplete(audioBlob) {
-    console.log("===>", isTrainingMode)
-    console.log("====? here", audioBlob)
     if (isTrainingMode) {
-        // Handle voice model training
         submitVoiceTraining(audioBlob);
+        isTrainingMode = false;
     } else {
-        // Handle translation
         submitAudioForTranslation(audioBlob);
     }
 }
+
 
 /**
  * Submit audio for translation
@@ -246,7 +300,7 @@ function handleRecordingComplete(audioBlob) {
  */
 function submitAudioForTranslation(audioBlob) {
     // If using WebSockets, send the audio for real-time processing
-    if (isConnected && socket) {
+    if (!isConnected && socket) {
         // Convert blob to array buffer for sending over WebSocket
         const reader = new FileReader();
         reader.onload = function() {
@@ -404,6 +458,7 @@ function handleVoiceModelCreated(data) {
  * Load available voice models from the server
  */
 function loadVoiceModels() {
+    console.log("===> load here")
     fetch('/voices')
         .then(response => response.json())
         .then(data => {
